@@ -11,6 +11,8 @@ const PRICING = {
   'claude-sonnet-4-5':  [3,     15],
   'claude-haiku-4-5':   [0.25,  1.25],
   'claude-opus-4':      [15,    75],
+  'claude-sonnet-4':    [3,     15],
+  'claude-haiku-4':     [0.25,  1.25],
   'claude-sonnet-3-5':  [3,     15],
   'gpt-4o':             [5,     15],
   'gpt-4-turbo':        [10,    30],

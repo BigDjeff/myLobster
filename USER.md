@@ -1,12 +1,7 @@
-# USER.md - About Your Human
+# USER.md
 
 - **Name:** Jeff
-- **What to call them:** jeff
-- **Timezone:** <timezone, Australia, Melbourne>. All displayed
-  times must be converted to this timezone, including cron logs, calendar
-  events, and timestamps from databases stored in UTC.
-- **Notes:** Schedule patterns, Early bird, usually up around 7am
-
-## Context
-
-*(Add personal context as you learn it over time)*
+- **Address as:** jeff
+- **Timezone:** Australia/Melbourne. Convert all displayed times (cron logs, calendar, DB timestamps) to this zone.
+- **Work email:** *(work domain email)*
+- **Schedule:** Early bird, usually up around 7am

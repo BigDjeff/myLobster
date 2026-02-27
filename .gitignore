@@ -1,7 +1,19 @@
+# Dependencies
 node_modules/
+
+# Environment / secrets
 .env
 *.env
+
+# OS / local artifacts
 .DS_Store
 .Rhistory
+
+# Runtime state and logs
 data/
 *.jsonl
+.openclaw/
+
+# Local memory runtime files (private)
+memory/*.md
+memory/heartbeat-state.json

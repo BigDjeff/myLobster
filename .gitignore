@@ -16,4 +16,3 @@ data/
 
 # Local memory runtime files (private)
 memory/*.md
-memory/heartbeat-state.json

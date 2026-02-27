@@ -40,6 +40,12 @@ default to the more restrictive tier.
 - Preserve existing behavior unless a behavior change was explicitly requested.
 - No silent failures. Surface errors clearly.
 
+## Google Workspace Rule (Strict)
+- For Gmail, Calendar, and Drive tasks, always use the `gog` API path first.
+- Treat natural-language requests in any channel (including Telegram) as eligible for `gog` execution.
+- Default to read-only behavior unless the user explicitly asks to modify/create/delete.
+- Use browser relay only as fallback when `gog` cannot perform the requested action.
+
 ## Writing Style
 - Lead with the point. Answer first.
 - No em dashes. Use commas, colons, periods, or semicolons.

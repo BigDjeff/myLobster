@@ -8,16 +8,16 @@ Then alert the user.
 
 ## Every Heartbeat
 - Update memory/heartbeat-state.json timestamps
-- Git backup: run auto-git-sync. Alert only on merge conflicts or persistent push failures.
-- Gateway usage sync: sync LLM calls from session transcripts into interaction store
-- System health check (--notify)
-- Cron failure deltas (--notify)
-- Persistent failure check (--notify)
+- Run auto-git-sync (alert only on merge conflicts or persistent push failures)
+- Sync gateway LLM usage from session transcripts
+- Run system health check (--notify)
+- Run cron failure deltas (--notify)
+- Run persistent failure check (--notify)
 
 ## Once Daily
-- Data collection health deltas (--notify)
-- Repo size check (alert if over 500MB)
-- Memory index coverage (alert if below 80%)
+- Run data collection health deltas (--notify)
+- Check repo size (alert if over 500MB)
+- Check memory index coverage (alert if below 80%)
 
 ## Weekly
 - Verify gateway is bound to loopback only

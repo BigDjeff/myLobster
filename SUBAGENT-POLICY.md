@@ -1,82 +1,29 @@
 # Subagent Policy
 
-Core directive: anything other than a simple conversational message
-should spawn a subagent.
+Use subagents to keep the main conversation responsive, not by default for every task.
 
-## When to use a subagent
+## Use a subagent when
+- The task is long-running, multi-step, or likely to block the main session.
+- Work needs parallel exploration, broad file/code investigation, or retries.
+- The task is coding-heavy and better handled by a dedicated coding agent.
+- External systems are flaky and isolation helps contain failures.
 
-Use a subagent for:
-- Searches (web, social, email)
-- API calls
-- Multi-step tasks
-- Data processing
-- File operations beyond simple reads
-- Calendar/email operations
-- Any task expected to take more than a few seconds
-- Anything that could fail or block the main session
+## Work directly when
+- The task is short, clear, and can finish quickly in the main turn.
+- It is a simple answer, clarification, or single-step operation.
+- Spawning overhead is larger than the expected work.
 
-## When to work directly
-
-Handle these without a subagent:
-- Simple conversational replies
-- Quick clarifying questions
-- Acknowledgments
-- Quick file reads for context
-- Single-step lookups where spawning a subagent would take longer
-  than just doing it
-
-The goal is keeping the main session responsive, not spawning subagents
-for the sake of it. If a direct approach is faster and simpler, use it.
-
-## Coding, debugging, and investigation delegation
-
-All coding, debugging, and investigation tasks go through subagents.
-The main session should never block on this work.
-
-The subagent evaluates complexity:
-- **Simple:** Handle directly. Config changes, small single-file fixes,
-  appending to existing patterns, checking one log or config value.
-- **Medium / Major:** Delegate to your coding agent CLI. This includes
-  multi-file features, complex logic, large additions, and multi-step
-  investigations that require tracing across files or systems.
-
-Model routing is centralized in config/model-routing.json.
-
-## Why
-
-Main session stability is critical. Subagents:
-- Keep the main session responsive so the user can keep talking
-- Isolate failures from the main conversation
-- Allow concurrent work
-- Report back when done
-
-## Delegation announcements
-
-When delegating to a subagent, tell the user which model and provider
-you're using. This makes the routing visible.
-
-Format: [model] via [provider/tool]
-
-Examples:
-- "Spawning a subagent with <model> to search Twitter."
-- "Delegating to <coding-model> via coding agent CLI."
-
-Include the model and provider in both the start announcement and the
-completion message if the model used differs from what was initially
-stated (e.g., fallback).
+## Delegation protocol
+- Tell the user when delegation starts and what it is for.
+- Include model/provider only when it adds user value.
+- Return with a concise outcome and any next action.
 
 ## Failure handling
+1. Report failure details clearly.
+2. Retry once for transient errors.
+3. If retry fails, stop and report both attempts.
 
-When a subagent fails:
-1. Report to the user via messaging platform with error details
-2. Retry once if the failure seems transient (network timeout, rate limit)
-3. If the retry also fails, report both attempts and stop
-
-## Implementation
-
-Use your framework's subagent spawning mechanism with:
-- Clear task description
-- Default to your primary model for non-coding subagent tasks
-- Only use a different model if the primary is unavailable or the task
-  requires a specialized capability (e.g., specific API access)
-- Estimated time if helpful
+## Guardrails
+- Never delegate just to avoid doing obvious work.
+- Never hide blockers; report them.
+- Keep final ownership in the main session.

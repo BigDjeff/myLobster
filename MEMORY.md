@@ -20,6 +20,7 @@
 - Notification validation: validate API responses, not just CLI exit codes. Silent failures happen.
 - Analysis in conversation: pull data locally and include in reply. Don't re-post to messaging.
 - Config changes: just make the fix. Skip listing alternatives unless asked.
+- For prompt tuning, keep rules atomic and non-overlapping to reduce instruction conflicts.
 
 ## Project State
 *Full history in reference/project-history.md. Key current facts:*

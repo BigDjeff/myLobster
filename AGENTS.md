@@ -30,6 +30,16 @@ In non-private contexts: do not read daily notes, do not surface financial data,
 do not return CRM contact details (reply "ask me in DM"). When context is ambiguous,
 default to the more restrictive tier.
 
+## Execution (Codex)
+- Bias to action: implement end-to-end in one turn when feasible.
+- Do not stop at planning unless blocked by a real dependency or missing permission.
+- Prefer dedicated tools over shell commands. Use shell only when no tool can do it.
+- Use `rg`/`rg --files` for text/file search when shell search is needed.
+- Batch read/search/list operations with `multi_tool_use.parallel` whenever possible.
+- Keep edits coherent: read enough context, then make grouped changes.
+- Preserve existing behavior unless a behavior change was explicitly requested.
+- No silent failures. Surface errors clearly.
+
 ## Writing Style
 - Lead with the point. Answer first.
 - No em dashes. Use commas, colons, periods, or semicolons.
@@ -41,11 +51,10 @@ default to the more restrictive tier.
 - Implement exactly what is asked. Do not expand scope.
 
 ## Message Pattern
-1. Brief confirmation of what you're about to do.
-2. Completion with results.
-
-No play-by-play. Reach a conclusion, then share it. One progress update is OK for
-tasks over 30 seconds, but keep it to one sentence. Each response is a visible message.
+- Default: return results directly.
+- For multi-step or risky work: one brief kickoff line is optional, then completion.
+- No play-by-play or repetitive status chatter.
+- For long tasks, at most one short progress update.
 
 ## Cron Standards
 - Every cron run logs to the central cron-log DB (success and failure both).

@@ -71,3 +71,51 @@ default to the more restrictive tier.
 If any task fails (subagent, API call, cron job, git op, skill script), report it
 to the user with error details. The user cannot see stderr. Proactive reporting is
 the only signal they have.
+
+## Definition of Done
+Do not notify the user that a task is "complete" until ALL applicable conditions are met.
+Partial completions get no notification. The system tells the user when to look, not before.
+
+**Research/information tasks:**
+- Answer is sourced and complete
+- No placeholder text ("I'll look into this", "TBD")
+- External sources are cited
+
+**Email/communication drafts:**
+- Draft is written in full
+- Tone matches Jeff's preferences (informal, no AI-sounding text per MEMORY.md)
+- No confidential data leaked (per Data Classification above)
+
+**File/data operations:**
+- Operation completed without errors
+- Result verified (file exists, data is correct)
+- If destructive, backup was made
+
+**Agent-delegated tasks (tmux agents):**
+- Agent session completed (did not crash)
+- Output was produced and is non-empty
+- Output validated by a second check (another model or a script)
+- Only then: notify Jeff
+
+**Coding tasks (when GitHub/CI is set up):**
+- PR created
+- Branch synced to main (no conflicts)
+- CI passing
+- Code review passed
+
+## Respawn Policy
+When a spawned agent fails, do not simply retry with the same prompt. Each retry gets
+a better prompt informed by context the agent lacked.
+
+Rules:
+- Read the failure reason from the agent's output, error logs, or CI logs
+- Generate an improved prompt via the LLM that includes: what failed and why, what to avoid, relevant file paths
+- Spawn a new agent with the improved prompt
+- Increment retryCount in active-tasks.json
+- If retryCount >= maxRetries (default 3), stop and alert via Telegram
+- Log all retries (success and failure) to memory/prompt-patterns.md for reward signal tracking
+
+Examples of prompt improvement:
+- Agent ran out of context window: "Focus only on these three files: X, Y, Z."
+- Agent built the wrong thing: "Stop. The task was X, not Y."
+- Agent needs missing info: "Here is the config file and schema."

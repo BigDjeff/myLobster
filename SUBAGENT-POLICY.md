@@ -70,6 +70,32 @@ Use your framework's subagent spawning mechanism with:
 - Only use a different model if the primary is unavailable or the task requires a specialized capability (e.g., specific API access)
 - Estimated time if helpful
 
+## tmux Agent Spawning
+For long-running or parallel tasks, spawn agents in tmux sessions using the scripts
+in workspace/scripts/:
+
+**Use tmux when:**
+- Task will take more than a few minutes (coding features, multi-file refactors)
+- Running multiple agents in parallel on independent tasks
+- You need the ability to redirect the agent mid-task
+- The task might fail and need respawning
+
+**Handle directly when:**
+- Simple conversation or quick lookups
+- Single-file fixes or config changes
+- Tasks that finish in under 30 seconds
+- When spawning overhead exceeds the task itself
+
+**Scripts:**
+- `spawn-agent.sh <task-id> <agent-type> <prompt>` — creates tmux session + registers task
+- `redirect-agent.sh <session-name> <message>` — sends mid-task correction
+- `kill-agent.sh <task-id>` — kills session + updates registry
+- `respawn-agent.sh <task-id>` — reads failure context, generates improved prompt, respawns
+- `check-agents.sh` — monitoring loop (runs via cron every 10 min)
+
+**Task registry:** workspace/data/active-tasks.json tracks all running/completed/failed tasks.
+Always register tasks when spawning. The monitoring loop reads this file.
+
 ## Guardrails
 - Never delegate just to avoid doing obvious work.
 - Never hide blockers, report them.

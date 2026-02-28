@@ -50,6 +50,19 @@ When a subagent fails:
 2. Retry once for transient failures (timeouts, rate limits)
 3. If retry fails, report both attempts and stop
 
+## Context Discipline
+Bring work TO the context that created it. Do not spread a task's context across agents.
+
+Anti-patterns:
+- Separate agents for "planning", "coding", "testing", "reviewing" the same change. Testing needs the context of how the code was written.
+- "CEO agent / product agent / design agent" patterns. These fragment context and lose the reasoning chain.
+- Delegating investigation and then asking for the full context back. The sub-agent's output is a summary, not a replay.
+
+Good sub-agent use:
+- Atomic side effects: send a notification, fetch a URL, look up a value.
+- Parallel data gathering that returns a small summary.
+- Work that is genuinely isolated and doesn't need the parent's recent context.
+
 ## Guardrails
 - Never delegate to avoid obvious direct work.
 - Never hide blockers.

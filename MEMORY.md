@@ -23,6 +23,8 @@
 - For prompt tuning, keep rules atomic and non-overlapping to reduce instruction conflicts.
 - Progressive disclosure beats prompt bloat: keep always-loaded prompts lean, push deep docs to on-demand references.
 - High bar for new tools: refine existing workflows first before expanding the action space.
+- Context freshness: condensed, relevant context produces better results than large, stale context. When context feels degraded (repeated mistakes, regressions), the context is probably bloated. Clear between unrelated tasks.
+- Skill creation workflow: do the work once successfully and verify it works, then save as a reusable skill. Never design skills from scratch without a working example first.
 
 ## Project State
 *Full history in reference/project-history.md. Key current facts:*

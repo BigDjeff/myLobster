@@ -23,11 +23,24 @@ In non-private contexts: do not read daily notes, do not surface financial data,
 ## Execution (Codex)
 - Bias to action: deliver concrete results, not just plans.
 - Do not stop at planning unless blocked by a real dependency, missing permission, or explicit pause.
+- For non-trivial changes (multi-file, architecture, unfamiliar code): plan first, then execute decisively. Planning is not stalling — it prevents wasted cycles. Bias to action means commit after planning, not skip planning.
 - Prefer dedicated tools over shell commands. Use shell only when no dedicated tool fits.
 - Use `rg` / `rg --files` for search when shell search is needed.
 - Batch independent reads/searches with `multi_tool_use.parallel`.
 - Preserve existing behavior unless a behavior change was explicitly requested.
 - No silent failures. Surface errors clearly.
+- Git checkpoint before risky changes: commit working state before refactors, deletions, or multi-file rewrites. Git is the primary safety net.
+- When assumptions prove wrong or errors repeat: stop and reassess the approach. Do not push forward through compounding failures.
+
+## Validation Loop
+For any coding task, run this cycle before considering it done:
+
+1. **Syntax check** modified JS files: `node --check <file.js>`
+2. **Run tests**: `node tests/test-all-gaps.js` (94 tests, no live LLM calls)
+3. **Verify bash scripts**: check `set -euo pipefail` present, file is executable
+4. **If anything fails**: fix it and re-run. Do not move on with broken code.
+
+This loop is the single most important factor in producing reliable code. An agent that validates is dramatically better than one that does not.
 
 ## Action Space Design
 - Keep tool usage simple and minimal. Do not add process/tool complexity unless it clearly improves reliability.
@@ -35,6 +48,8 @@ In non-private contexts: do not read daily notes, do not surface financial data,
 - Prefer progressive disclosure: keep always-loaded prompts lean; put deep docs in on-demand files.
 - Let the agent build context through search/read steps instead of preloading large context blobs.
 - Revisit old constraints as model capability improves. Remove rules that are now constraining rather than helpful.
+- Rules self-improvement: when a mistake recurs, update the relevant doc (AGENTS.md, MEMORY.md, etc.) to prevent it. Propose the change to Jeff rather than silently editing.
+- Skill creation: when a workflow succeeds and will recur, offer to save it as a reusable skill. Do not create skills from scratch — do the work once, then extract.
 
 ## Elicitation
 - When clarification is needed, ask focused questions with clear options.

@@ -4,10 +4,11 @@ set -euo pipefail
 # spawn-agent.sh — Spawn a coding agent in a tmux session and register it.
 #
 # Usage: spawn-agent.sh <task-id> <agent-type> <prompt> [--model MODEL] [--branch BRANCH] [--no-notify]
+#        spawn-agent.sh <task-id> raw <prompt> --raw-cmd "node script.js args"
 #
 # Arguments:
 #   task-id     Unique identifier for this task
-#   agent-type  One of: claude-opus, claude-sonnet, claude-haiku, codex
+#   agent-type  One of: claude-opus, claude-sonnet, claude-haiku, codex, raw
 #   prompt      The prompt/instruction for the agent (quote it)
 #
 # Options:
@@ -15,6 +16,7 @@ set -euo pipefail
 #   --branch BRANCH   Git branch/worktree name
 #   --no-notify       Don't send notification on completion
 #   --max-retries N   Max retry attempts (default: 3)
+#   --raw-cmd CMD     Run an arbitrary command instead of a claude/codex agent
 
 BASE_DIR="/Users/jeffcheng/.openclaw"
 WORKSPACE="$BASE_DIR/workspace"
@@ -39,6 +41,7 @@ MODEL=""
 BRANCH=""
 NOTIFY=true
 MAX_RETRIES=3
+RAW_CMD=""
 
 # Parse options
 while [ $# -gt 0 ]; do
@@ -47,6 +50,7 @@ while [ $# -gt 0 ]; do
     --branch) BRANCH="$2"; shift 2 ;;
     --no-notify) NOTIFY=false; shift ;;
     --max-retries) MAX_RETRIES="$2"; shift 2 ;;
+    --raw-cmd) RAW_CMD="$2"; shift 2 ;;
     *) echo "Unknown option: $1"; exit 1 ;;
   esac
 done
@@ -58,7 +62,8 @@ if [ -z "$MODEL" ]; then
     claude-sonnet) MODEL="claude-sonnet-4-5" ;;
     claude-haiku)  MODEL="claude-haiku-4-5" ;;
     codex)         MODEL="gpt-5.3-codex" ;;
-    *) echo "Unknown agent type: $AGENT_TYPE. Use: claude-opus, claude-sonnet, claude-haiku, codex"; exit 1 ;;
+    raw)           MODEL="raw-command" ;;
+    *) echo "Unknown agent type: $AGENT_TYPE. Use: claude-opus, claude-sonnet, claude-haiku, codex, raw"; exit 1 ;;
   esac
 fi
 
@@ -90,16 +95,21 @@ $NODE -e "
 
 # Build the agent command based on type
 AGENT_CMD=""
-case "$AGENT_TYPE" in
-  claude-opus|claude-sonnet|claude-haiku)
-    # Use Claude Code CLI
-    AGENT_CMD="cd '$WORKSPACE' && claude -p '$PROMPT' --model '$MODEL' 2>&1 | tee '$BASE_DIR/logs/agent-${TASK_ID}.log'; echo 'AGENT_EXIT_CODE='\$?"
-    ;;
-  codex)
-    # Use OpenAI Codex CLI
-    AGENT_CMD="cd '$WORKSPACE' && codex '$PROMPT' 2>&1 | tee '$BASE_DIR/logs/agent-${TASK_ID}.log'; echo 'AGENT_EXIT_CODE='\$?"
-    ;;
-esac
+if [ -n "$RAW_CMD" ]; then
+  # Raw command mode: run arbitrary command (used by swarm workers, decomposed tasks)
+  AGENT_CMD="cd '$WORKSPACE' && $RAW_CMD 2>&1 | tee '$BASE_DIR/logs/agent-${TASK_ID}.log'; echo 'AGENT_EXIT_CODE='\$?"
+else
+  case "$AGENT_TYPE" in
+    claude-opus|claude-sonnet|claude-haiku)
+      # Use Claude Code CLI
+      AGENT_CMD="cd '$WORKSPACE' && claude -p '$PROMPT' --model '$MODEL' 2>&1 | tee '$BASE_DIR/logs/agent-${TASK_ID}.log'; echo 'AGENT_EXIT_CODE='\$?"
+      ;;
+    codex)
+      # Use OpenAI Codex CLI
+      AGENT_CMD="cd '$WORKSPACE' && codex '$PROMPT' 2>&1 | tee '$BASE_DIR/logs/agent-${TASK_ID}.log'; echo 'AGENT_EXIT_CODE='\$?"
+      ;;
+  esac
+fi
 
 # If a branch was specified, set up git worktree
 if [ -n "$BRANCH" ]; then

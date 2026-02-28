@@ -105,9 +105,28 @@ for TASK_ID in $UNNOTIFIED; do
   [ -z "$TASK_ID" ] && continue
   STATUS=$(jq -r ".tasks[] | select(.id == \"$TASK_ID\") | .status" "$TASKS_FILE")
   DESCRIPTION=$(jq -r ".tasks[] | select(.id == \"$TASK_ID\") | .description // \"(no description)\"" "$TASKS_FILE")
+  BRANCH=$(jq -r ".tasks[] | select(.id == \"$TASK_ID\") | .worktree // empty" "$TASKS_FILE")
 
   if [ "$STATUS" = "done" ]; then
-    NOTIFY_MSG="${NOTIFY_MSG}✓ ${DESCRIPTION}\n"
+    # Gap 3: Run AI code review before notification
+    REVIEW_TEXT=""
+    REVIEW_RESULT=$($NODE -e "
+      const { reviewTask, formatReviewForNotification } = require('$WORKSPACE/shared/code-review.js');
+      (async () => {
+        try {
+          const review = await reviewTask({
+            taskId: '$TASK_ID',
+            description: $(printf '%s' "$DESCRIPTION" | $NODE -e "process.stdout.write(JSON.stringify(require('fs').readFileSync('/dev/stdin','utf8')))"),
+            branch: '$BRANCH' || undefined,
+            caller: 'check-agents:review',
+          });
+          process.stdout.write(formatReviewForNotification(review));
+        } catch (err) {
+          process.stdout.write('Review: skipped (' + err.message.slice(0, 50) + ')');
+        }
+      })();
+    " 2>/dev/null || echo "Review: skipped")
+    NOTIFY_MSG="${NOTIFY_MSG}✓ ${DESCRIPTION}\n  ${REVIEW_RESULT}\n"
   elif [ "$STATUS" = "failed" ]; then
     ERROR=$(jq -r ".tasks[] | select(.id == \"$TASK_ID\") | .error // \"unknown\"" "$TASKS_FILE")
     NOTIFY_MSG="${NOTIFY_MSG}✗ ${DESCRIPTION}: ${ERROR}\n"

@@ -11,11 +11,87 @@ const AUTH_JSON_PATH = path.join(
   process.env.HOME || '~', '.openclaw', 'agents', 'main', 'agent', 'auth.json'
 );
 
+// Deduplication for concurrent refresh attempts
+let _refreshRunning = null;
+
+/**
+ * Refresh the OpenAI OAuth token using the refresh_token grant.
+ * Updates auth.json with new access/refresh/expires values.
+ * @returns {Promise<string>} The new access token
+ */
+async function refreshOpenAIToken() {
+  // Deduplicate concurrent refreshes
+  if (_refreshRunning) return _refreshRunning;
+
+  _refreshRunning = (async () => {
+    if (!fs.existsSync(AUTH_JSON_PATH)) {
+      throw new Error('No auth.json to refresh. Run `openclaw login openai-codex`.');
+    }
+
+    const auth = JSON.parse(fs.readFileSync(AUTH_JSON_PATH, 'utf8'));
+    const codex = auth['openai-codex'];
+    if (!codex || !codex.refresh) {
+      throw new Error('No refresh token available. Run `openclaw login openai-codex`.');
+    }
+
+    // Extract client_id from JWT payload (fallback to known app ID)
+    let clientId = 'app_EMoamEEZ73f0CkXaXp7hrann';
+    try {
+      const parts = codex.access.split('.');
+      if (parts.length >= 2) {
+        const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString());
+        if (payload.client_id) clientId = payload.client_id;
+      }
+    } catch { /* use fallback */ }
+
+    console.log('[openai-chat] Refreshing OAuth token...');
+
+    const resp = await fetch('https://auth.openai.com/oauth/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        grant_type: 'refresh_token',
+        refresh_token: codex.refresh,
+        client_id: clientId,
+      }),
+    });
+
+    if (!resp.ok) {
+      const body = await resp.text();
+      throw new Error(`Token refresh failed HTTP ${resp.status}: ${body.slice(0, 300)}`);
+    }
+
+    const data = await resp.json();
+    const newAccess = data.access_token;
+    const newRefresh = data.refresh_token || codex.refresh;
+    const expiresIn = data.expires_in || 3600;
+    const newExpires = Date.now() + expiresIn * 1000;
+
+    // Update auth.json
+    auth['openai-codex'] = {
+      access: newAccess,
+      refresh: newRefresh,
+      expires: newExpires,
+    };
+    fs.writeFileSync(AUTH_JSON_PATH, JSON.stringify(auth, null, 2) + '\n', 'utf8');
+
+    // Reset smoke test so next call re-validates
+    _smokeTestPassed = false;
+
+    console.log(`[openai-chat] Token refreshed, expires in ${Math.round(expiresIn / 3600)}h`);
+    return newAccess;
+  })().finally(() => { _refreshRunning = null; });
+
+  return _refreshRunning;
+}
+
 /**
  * Resolve an OpenAI Bearer token via OAuth only.
  * Reads auth.json -> openai-codex.access (OAuth JWT).
+ * Auto-refreshes if expired.
+ * @returns {Promise<string>}
  */
-function resolveOpenAIAuth() {
+async function resolveOpenAIAuth() {
   if (!fs.existsSync(AUTH_JSON_PATH)) {
     throw new Error(
       'No OpenAI OAuth credentials found. Run `openclaw login openai-codex` to authenticate.'
@@ -30,14 +106,9 @@ function resolveOpenAIAuth() {
     );
   }
 
-  // Check expiry
+  // Auto-refresh if expired
   if (codex.expires && codex.expires < Date.now()) {
-    // TODO: implement token refresh using codex.refresh
-    // POST to https://auth.openai.com/oauth/token with grant_type=refresh_token
-    throw new Error(
-      'OpenAI OAuth token has expired. Token refresh not yet implemented. ' +
-      'Re-run `openclaw login openai-codex` to re-authenticate.'
-    );
+    return await refreshOpenAIToken();
   }
 
   // Warn if expiring within 24h
@@ -122,7 +193,7 @@ async function runOpenAIChatPrompt({
   skipLog = false,
 } = {}) {
   const normalizedModel = normalizeModel(model);
-  const token = resolveOpenAIAuth();
+  const token = await resolveOpenAIAuth();
 
   // Deduplicate concurrent smoke tests
   if (!_smokeTestPassed) {
@@ -197,4 +268,4 @@ async function runOpenAIChatPrompt({
   return { text, provider: 'openai' };
 }
 
-module.exports = { runOpenAIChatPrompt };
+module.exports = { runOpenAIChatPrompt, refreshOpenAIToken };

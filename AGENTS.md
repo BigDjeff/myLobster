@@ -49,7 +49,10 @@ This loop is the single most important factor in producing reliable code. An age
 - Let the agent build context through search/read steps instead of preloading large context blobs.
 - Revisit old constraints as model capability improves. Remove rules that are now constraining rather than helpful.
 - Rules self-improvement: when a mistake recurs, update the relevant doc (AGENTS.md, MEMORY.md, etc.) to prevent it. Propose the change to Jeff rather than silently editing.
-- Skill creation: when a workflow succeeds and will recur, offer to save it as a reusable skill. Do not create skills from scratch — do the work once, then extract.
+- Skill creation: when a workflow succeeds and will recur, offer to save it as a reusable skill. Do not create skills from scratch — do the work once, then extract. Iterate after extraction: invoke → observe → feedback → fix → repeat. First few runs need active monitoring. Skills improve with use.
+- Skill structure: keep workflow/skill docs under 500 lines. Move reference material (data files, API docs, templates, brand assets) to separate files and point to them by path. The skill doc is the brain; supporting files are the tools it can reach for.
+- Hardcode stable values: when agents repeatedly look up the same IDs, endpoints, or paths, put them directly in the relevant doc or config (TOOLS.md already does this). Repeated discovery of the same value wastes tokens.
+- Cache over fetch: for static external data (API docs, reference specs, style guides), scrape once and store as local markdown. Processing a local file is orders of magnitude cheaper than live API or web calls every time.
 
 ## Elicitation
 - When clarification is needed, ask focused questions with clear options.

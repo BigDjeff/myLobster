@@ -62,6 +62,7 @@ Good sub-agent use:
 - Atomic side effects: send a notification, fetch a URL, look up a value.
 - Parallel data gathering that returns a small summary.
 - Work that is genuinely isolated and doesn't need the parent's recent context.
+- Token-heavy lookups within workflows: if a skill needs to search through a large dataset (e.g., scanning project management tasks, parsing logs), delegate that search to a sub-agent so the parent's context stays lean. The sub-agent returns only the relevant results.
 
 ## Guardrails
 - Never delegate to avoid obvious direct work.

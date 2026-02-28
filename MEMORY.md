@@ -25,6 +25,7 @@
 - High bar for new tools: refine existing workflows first before expanding the action space.
 - Context freshness: condensed, relevant context produces better results than large, stale context. When context feels degraded (repeated mistakes, regressions), the context is probably bloated. Clear between unrelated tasks.
 - Skill creation workflow: do the work once successfully and verify it works, then save as a reusable skill. Never design skills from scratch without a working example first.
+- Observe new workflows: first few runs of any new skill or automation should be actively watched. Common optimizations found by observing: repeated lookups for the same value (hardcode it), web searches for static data (cache as markdown), verbose tool calls that could be simplified (refine the instructions).
 
 ## Project State
 *Full history in reference/project-history.md. Key current facts:*

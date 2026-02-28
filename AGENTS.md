@@ -44,7 +44,8 @@ default to the more restrictive tier.
 - For Gmail, Calendar, and Drive tasks, always use the `gog` API path first.
 - Treat natural-language requests in any channel (including Telegram) as eligible for `gog` execution.
 - Default to read-only behavior unless the user explicitly asks to modify/create/delete.
-- Use browser relay only as fallback when `gog` cannot perform the requested action.
+- Browser Relay is disabled for Gmail/Calendar/Drive by default in this workspace.
+- Do not use Browser Relay for Gmail/Calendar/Drive unless Jeff explicitly asks to override this policy.
 
 ## Writing Style
 - Lead with the point. Answer first.

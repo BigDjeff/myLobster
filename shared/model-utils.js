@@ -10,6 +10,7 @@ const MODEL_ALIASES = {
   'gpt-4o':    'gpt-4o',
   'gpt-4':     'gpt-4-turbo',
   'gpt-3.5':   'gpt-3.5-turbo',
+  'codex':     'gpt-5.3-codex',
 };
 
 // True if the model name looks like an Anthropic model
@@ -25,23 +26,26 @@ function isAnthropicModel(model) {
 }
 
 // Resolve alias, strip provider prefix (e.g. "anthropic/claude-sonnet-4-5" -> "claude-sonnet-4-5")
-function normalizeAnthropicModel(model) {
+function normalizeModel(model) {
   if (!model) return model;
-  // Strip provider prefix
-  let normalized = model.replace(/^anthropic\//i, '').replace(/^openai\//i, '');
+  // Strip provider prefix (handles anthropic/, openai/, openai-codex/)
+  let normalized = model.replace(/^anthropic\//i, '').replace(/^openai(?:-codex)?\//i, '');
   // Resolve alias
   if (MODEL_ALIASES[normalized]) normalized = MODEL_ALIASES[normalized];
   return normalized;
 }
 
+// Backward-compatible alias
+const normalizeAnthropicModel = normalizeModel;
+
 // Returns "anthropic", "openai", or null
 function detectModelProvider(model) {
   if (!model) return null;
-  const normalized = normalizeAnthropicModel(model);
+  const normalized = normalizeModel(model);
   if (isAnthropicModel(normalized)) return 'anthropic';
   const lower = normalized.toLowerCase();
-  if (lower.startsWith('gpt-') || lower.startsWith('o1') || lower.startsWith('o3')) return 'openai';
+  if (lower.startsWith('gpt-') || lower.startsWith('o1') || lower.startsWith('o3') || lower.includes('codex')) return 'openai';
   return null;
 }
 
-module.exports = { MODEL_ALIASES, isAnthropicModel, normalizeAnthropicModel, detectModelProvider };
+module.exports = { MODEL_ALIASES, isAnthropicModel, normalizeModel, normalizeAnthropicModel, detectModelProvider };

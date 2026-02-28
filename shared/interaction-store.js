@@ -17,6 +17,7 @@ const PRICING = {
   'gpt-4o':             [5,     15],
   'gpt-4-turbo':        [10,    30],
   'gpt-3.5-turbo':      [0.5,   1.5],
+  'gpt-5.3-codex':      [2,     8],    // TODO: verify pricing when officially published
 };
 
 const SECRET_PATTERN = /sk-[a-zA-Z0-9]{20,}|Bearer [a-zA-Z0-9\-._~+/]+=*/g;

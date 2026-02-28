@@ -21,6 +21,8 @@
 - Analysis in conversation: pull data locally and include in reply. Don't re-post to messaging.
 - Config changes: just make the fix. Skip listing alternatives unless asked.
 - For prompt tuning, keep rules atomic and non-overlapping to reduce instruction conflicts.
+- Progressive disclosure beats prompt bloat: keep always-loaded prompts lean, push deep docs to on-demand references.
+- High bar for new tools: refine existing workflows first before expanding the action space.
 
 ## Project State
 *Full history in reference/project-history.md. Key current facts:*

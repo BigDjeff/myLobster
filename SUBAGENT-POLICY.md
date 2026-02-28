@@ -3,7 +3,6 @@
 Core directive: anything other than a simple conversational message should spawn a subagent.
 
 ## When to use a subagent
-
 Use a subagent for:
 - Searches (web, social, email)
 - API calls
@@ -12,91 +11,46 @@ Use a subagent for:
 - File operations beyond simple reads
 - Calendar/email operations
 - Any task expected to take more than a few seconds
-- Anything that could fail or block the main session
+- Anything likely to fail or block the main session
 
 ## When to work directly
-
 Handle these without a subagent:
 - Simple conversational replies
 - Quick clarifying questions
 - Acknowledgments
 - Quick file reads for context
-- Single-step lookups where spawning a subagent would take longer than just doing it
+- Single-step lookups where spawn overhead is slower than direct execution
 
-The goal is keeping the main session responsive, not spawning subagents for the sake of it. If a direct approach is faster and simpler, use it.
+The goal is responsiveness, not subagent usage for its own sake.
 
-## Coding, debugging, and investigation delegation
+## Delegation model
+All coding, debugging, and investigation work should run through subagents.
 
-All coding, debugging, and investigation tasks go through subagents. The main session should never block on this work.
+Complexity routing:
+- **Simple:** Subagent can handle directly (small config changes, single-file fixes, one-log checks).
+- **Medium/Major:** Delegate to coding-agent CLI via subagent.
 
-The subagent evaluates complexity:
-- **Simple:** Handle directly. Config changes, small single-file fixes, appending to existing patterns, checking one log or config value.
-- **Medium / Major:** Delegate to your coding agent CLI. This includes multi-file features, complex logic, large additions, and multi-step investigations that require tracing across files or systems.
+Model routing remains centralized in `config/model-routing.json`.
 
-Model routing is centralized in config/model-routing.json.
-
-## Why
-
-Main session stability is critical. Subagents:
-- Keep the main session responsive so the user can keep talking
-- Isolate failures from the main conversation
-- Allow concurrent work
-- Report back when done
+## Coordination over static todos
+- Prefer task-based coordination that subagents can update, split, or replace.
+- Avoid rigid static todo lists that prevent adaptation when new information appears.
+- Keep one shared task state when parallel subagents are used.
 
 ## Delegation announcements
+When delegating, tell Jeff the model and provider/tool.
 
-When delegating to a subagent, tell the user which model and provider you're using. This makes the routing visible.
+Format: `[model] via [provider/tool]`
 
-Format: [model] via [provider/tool]
-
-Examples:
-- "Spawning a subagent with <model> to search Twitter."
-- "Delegating to <coding-model> via coding agent CLI."
-
-Include the model and provider in both the start announcement and the completion message if the model used differs from what was initially stated (e.g., fallback).
+If fallback model/provider is used, call it out in completion as well.
 
 ## Failure handling
-
 When a subagent fails:
-1. Report to the user via messaging platform with error details
-2. Retry once if the failure seems transient (network timeout, rate limit)
-3. If the retry also fails, report both attempts and stop
-
-## Implementation
-
-Use your framework's subagent spawning mechanism with:
-- Clear task description
-- Default to your primary model for non-coding subagent tasks
-- Only use a different model if the primary is unavailable or the task requires a specialized capability (e.g., specific API access)
-- Estimated time if helpful
-
-## tmux Agent Spawning
-For long-running or parallel tasks, spawn agents in tmux sessions using the scripts
-in workspace/scripts/:
-
-**Use tmux when:**
-- Task will take more than a few minutes (coding features, multi-file refactors)
-- Running multiple agents in parallel on independent tasks
-- You need the ability to redirect the agent mid-task
-- The task might fail and need respawning
-
-**Handle directly when:**
-- Simple conversation or quick lookups
-- Single-file fixes or config changes
-- Tasks that finish in under 30 seconds
-- When spawning overhead exceeds the task itself
-
-**Scripts:**
-- `spawn-agent.sh <task-id> <agent-type> <prompt>` — creates tmux session + registers task
-- `redirect-agent.sh <session-name> <message>` — sends mid-task correction
-- `kill-agent.sh <task-id>` — kills session + updates registry
-- `respawn-agent.sh <task-id>` — reads failure context, generates improved prompt, respawns
-- `check-agents.sh` — monitoring loop (runs via cron every 10 min)
-
-**Task registry:** workspace/data/active-tasks.json tracks all running/completed/failed tasks.
-Always register tasks when spawning. The monitoring loop reads this file.
+1. Report error details to Jeff
+2. Retry once for transient failures (timeouts, rate limits)
+3. If retry fails, report both attempts and stop
 
 ## Guardrails
-- Never delegate just to avoid doing obvious work.
-- Never hide blockers, report them.
+- Never delegate to avoid obvious direct work.
+- Never hide blockers.
 - Keep final ownership in the main session.

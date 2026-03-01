@@ -65,7 +65,15 @@ function getDb() {
  * @param {number} [opts.ttlMinutes] - Auto-expire after N minutes
  * @returns {string} Message ID
  */
+const VALID_TYPES = new Set(['data', 'signal', 'context', 'error']);
+let _lastCleanup = 0;
+const CLEANUP_INTERVAL_MS = 10 * 60 * 1000; // 10 minutes
+
 function postMessage({ channel, sender, recipient, type = 'data', payload, ttlMinutes }) {
+  if (!channel || typeof channel !== 'string') throw new Error('postMessage: channel is required and must be a string');
+  if (!sender || typeof sender !== 'string') throw new Error('postMessage: sender is required and must be a string');
+  if (!VALID_TYPES.has(type)) throw new Error(`postMessage: invalid type "${type}" — must be one of: ${[...VALID_TYPES].join(', ')}`);
+  if (payload === undefined || payload === null) throw new Error('postMessage: payload is required');
   const db = getDb();
   const id = `msg-${crypto.randomBytes(6).toString('hex')}`;
   const now = new Date().toISOString();
@@ -94,6 +102,14 @@ function postMessage({ channel, sender, recipient, type = 'data', payload, ttlMi
  */
 function readMessages(channel, opts = {}) {
   const db = getDb();
+
+  // Lazy cleanup: at most once per 10 minutes
+  const now = Date.now();
+  if (now - _lastCleanup > CLEANUP_INTERVAL_MS) {
+    _lastCleanup = now;
+    try { cleanExpired(); } catch { /* best effort */ }
+  }
+
   let query = `SELECT * FROM messages WHERE channel = ?`;
   const params = [channel];
 
@@ -130,19 +146,23 @@ function readMessages(channel, opts = {}) {
   query += ` ORDER BY created_at ASC LIMIT ?`;
   params.push(opts.limit || 50);
 
-  const messages = db.prepare(query).all(...params);
+  // Wrap read + cursor update in a transaction for atomicity
+  const readAndAdvanceCursor = db.transaction(() => {
+    const messages = db.prepare(query).all(...params);
 
-  // Update read cursor if agentId provided and messages returned
-  if (opts.agentId && messages.length > 0) {
-    const lastMsg = messages[messages.length - 1];
-    db.prepare(`
-      INSERT INTO read_cursors (agent_id, channel, last_read_id, last_read_at)
-      VALUES (?, ?, ?, ?)
-      ON CONFLICT(agent_id, channel) DO UPDATE SET last_read_id=excluded.last_read_id, last_read_at=excluded.last_read_at
-    `).run(opts.agentId, channel, lastMsg.id, new Date().toISOString());
-  }
+    if (opts.agentId && messages.length > 0) {
+      const lastMsg = messages[messages.length - 1];
+      db.prepare(`
+        INSERT INTO read_cursors (agent_id, channel, last_read_id, last_read_at)
+        VALUES (?, ?, ?, ?)
+        ON CONFLICT(agent_id, channel) DO UPDATE SET last_read_id=excluded.last_read_id, last_read_at=excluded.last_read_at
+      `).run(opts.agentId, channel, lastMsg.id, new Date().toISOString());
+    }
 
-  return messages;
+    return messages;
+  });
+
+  return readAndAdvanceCursor();
 }
 
 /**
@@ -235,31 +255,17 @@ function shareContext(channel, sender, key, value) {
  */
 function getContext(channel, key) {
   const db = getDb();
-  const msg = db.prepare(`
-    SELECT payload FROM messages
-    WHERE channel = ? AND type = 'context'
-    AND (expires_at IS NULL OR expires_at > datetime('now'))
-    ORDER BY created_at DESC LIMIT 1
-  `).get(channel);
-
-  if (!msg) return null;
   try {
-    const parsed = JSON.parse(msg.payload);
-    if (parsed.key === key) return parsed.value;
-
-    // Search through recent context messages for the right key
-    const msgs = db.prepare(`
+    const msg = db.prepare(`
       SELECT payload FROM messages
       WHERE channel = ? AND type = 'context'
+      AND json_extract(payload, '$.key') = ?
       AND (expires_at IS NULL OR expires_at > datetime('now'))
-      ORDER BY created_at DESC LIMIT 20
-    `).all(channel);
+      ORDER BY rowid DESC LIMIT 1
+    `).get(channel, key);
 
-    for (const m of msgs) {
-      const p = JSON.parse(m.payload);
-      if (p.key === key) return p.value;
-    }
-    return null;
+    if (!msg) return null;
+    return JSON.parse(msg.payload).value;
   } catch {
     return null;
   }

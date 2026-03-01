@@ -50,8 +50,8 @@ Return ONLY a valid JSON array. Example:
  * @param {string} [opts.caller='task-decomposer']
  * @returns {Promise<Array<{description: string, capability: string, mode: string, depends_on: number[]}>>}
  */
-async function decompose(taskDescription, { strategy = 'balanced', caller = 'task-decomposer' } = {}) {
-  const prompt = DECOMPOSE_PROMPT.replace('{{task}}', taskDescription);
+async function decompose(taskDescription, { strategy = 'balanced', caller = 'task-decomposer', decomposePrompt } = {}) {
+  const prompt = (decomposePrompt || DECOMPOSE_PROMPT).replace('{{task}}', taskDescription);
 
   const result = await routedLlm(prompt, {
     strategy,
@@ -73,7 +73,13 @@ async function decompose(taskDescription, { strategy = 'balanced', caller = 'tas
     throw new Error('Decomposition failed: no JSON array in response');
   }
 
-  const subtasks = JSON.parse(text.slice(start, end + 1));
+  let subtasks;
+  try {
+    subtasks = JSON.parse(text.slice(start, end + 1));
+  } catch (parseErr) {
+    const snippet = text.slice(start, Math.min(start + 200, end + 1));
+    throw new Error(`Decomposition failed: invalid JSON — ${parseErr.message}. Raw text starts with: ${snippet}`);
+  }
 
   // Validate structure
   if (!Array.isArray(subtasks) || subtasks.length === 0) {
@@ -86,6 +92,18 @@ async function decompose(taskDescription, { strategy = 'balanced', caller = 'tas
     st.capability = st.capability || 'reasoning';
     st.mode = st.mode || 'inline';
     st.depends_on = st.depends_on || [];
+  }
+
+  // Validate dependency indices — no forward refs, no out-of-bounds, no circular
+  for (let i = 0; i < subtasks.length; i++) {
+    for (const dep of subtasks[i].depends_on) {
+      if (typeof dep !== 'number' || !Number.isInteger(dep) || dep < 0 || dep >= subtasks.length) {
+        throw new Error(`Subtask ${i} has invalid dependency index: ${dep} (must be integer 0-${subtasks.length - 1})`);
+      }
+      if (dep >= i) {
+        throw new Error(`Subtask ${i} has forward/circular dependency on subtask ${dep} (depends_on indices must be < ${i})`);
+      }
+    }
   }
 
   return subtasks;
@@ -107,6 +125,7 @@ async function decomposeAndQueue(taskDescription, opts = {}) {
   const subtasks = await decompose(taskDescription, {
     strategy: opts.defaultStrategy || 'balanced',
     caller: opts.caller || 'task-decomposer',
+    decomposePrompt: opts.decomposePrompt,
   });
 
   // Build task entries for the queue
@@ -154,64 +173,116 @@ async function executeDecomposed(taskDescription, opts = {}) {
   const errors = new Array(subtasks.length).fill(null);
   let allSuccess = true;
 
-  // Execute respecting dependencies
-  for (let i = 0; i < subtasks.length; i++) {
-    const st = subtasks[i];
-    const taskId = taskIds[i];
+  // Build topological levels for parallel execution (2A)
+  const maxContextChars = opts.maxContextChars != null ? opts.maxContextChars : 4000;
+  const levels = [];
+  const taskLevel = new Array(subtasks.length).fill(-1);
+  const remaining = new Set(subtasks.map((_, i) => i));
 
-    // Wait for dependencies
-    for (const dep of st.depends_on) {
-      if (dep >= 0 && dep < i && errors[dep]) {
-        // Dependency failed, skip this task
-        failTask(taskId, `Dependency subtask ${dep} failed`);
-        errors[i] = `Dependency subtask ${dep} failed`;
+  while (remaining.size > 0) {
+    const level = [];
+    for (const i of remaining) {
+      const deps = subtasks[i].depends_on;
+      if (deps.every(d => taskLevel[d] >= 0)) {
+        level.push(i);
+      }
+    }
+    if (level.length === 0) {
+      for (const i of remaining) {
+        failTask(taskIds[i], 'Unresolvable dependency cycle');
+        errors[i] = 'Unresolvable dependency cycle';
+        allSuccess = false;
+      }
+      break;
+    }
+    for (const i of level) {
+      taskLevel[i] = levels.length;
+      remaining.delete(i);
+    }
+    levels.push(level);
+  }
+
+  // Execute level by level with Promise.all — O(depth) instead of O(n)
+  const maxRetries = opts.maxRetries != null ? opts.maxRetries : 2;
+
+  for (const level of levels) {
+    await Promise.all(level.map(async (i) => {
+      const st = subtasks[i];
+      const taskId = taskIds[i];
+
+      // Check if any dependency failed
+      for (const dep of st.depends_on) {
+        if (errors[dep]) {
+          failTask(taskId, `Dependency subtask ${dep} failed`);
+          errors[i] = `Dependency subtask ${dep} failed`;
+          allSuccess = false;
+          if (opts.onSubtaskError) opts.onSubtaskError(i, errors[i]);
+          return;
+        }
+      }
+
+      // Build context from dependency results (bounded — 2B)
+      let contextPrefix = '';
+      for (const dep of st.depends_on) {
+        if (results[dep]) {
+          const depResult = results[dep].length > 1000
+            ? results[dep].slice(0, 1000) + '...(truncated)'
+            : results[dep];
+          contextPrefix += `Previous step (${subtasks[dep].description}):\n${depResult}\n\n`;
+        }
+      }
+      if (contextPrefix.length > maxContextChars) {
+        contextPrefix = contextPrefix.slice(0, maxContextChars) + '...(context truncated)';
+      }
+
+      const prompt = contextPrefix
+        ? `Context from previous steps:\n${contextPrefix}\nNow: ${st.description}`
+        : st.description;
+
+      if (opts.onSubtaskStart) opts.onSubtaskStart(i, st.description);
+
+      // Claim and execute
+      const claimed = claimTask(swarmId, `decomposer-${i}`);
+      if (!claimed) {
+        errors[i] = 'Failed to claim task';
         allSuccess = false;
         if (opts.onSubtaskError) opts.onSubtaskError(i, errors[i]);
-        continue;
+        return;
       }
-    }
-    if (errors[i]) continue;
 
-    // Build context from dependency results
-    let contextPrefix = '';
-    for (const dep of st.depends_on) {
-      if (dep >= 0 && dep < i && results[dep]) {
-        contextPrefix += `Previous step (${subtasks[dep].description}):\n${results[dep]}\n\n`;
+      markRunning(claimed.id);
+
+      let lastErr = null;
+      for (let attempt = 0; attempt <= maxRetries; attempt++) {
+        try {
+          const llmResult = await routedLlm(prompt, {
+            strategy: st.strategy || opts.defaultStrategy || 'balanced',
+            capability: st.capability,
+            caller: opts.caller || `task-decomposer:${swarmId}:${i}`,
+          });
+          results[i] = llmResult.text;
+          completeTask(claimed.id, llmResult.text);
+          if (opts.onSubtaskComplete) opts.onSubtaskComplete(i, llmResult.text);
+          lastErr = null;
+          break;
+        } catch (err) {
+          lastErr = err;
+          const isTransient = /timeout|ETIMEDOUT|rate.?limit|429|503|ECONNRESET/i.test(err.message);
+          if (isTransient && attempt < maxRetries) {
+            const delayMs = 1000 * Math.pow(2, attempt);
+            await new Promise(r => setTimeout(r, delayMs));
+            continue;
+          }
+          break;
+        }
       }
-    }
-
-    const prompt = contextPrefix
-      ? `Context from previous steps:\n${contextPrefix}\nNow: ${st.description}`
-      : st.description;
-
-    if (opts.onSubtaskStart) opts.onSubtaskStart(i, st.description);
-
-    // Claim and execute
-    const claimed = claimTask(swarmId, `decomposer-${i}`);
-    if (!claimed) {
-      errors[i] = 'Failed to claim task';
-      allSuccess = false;
-      if (opts.onSubtaskError) opts.onSubtaskError(i, errors[i]);
-      continue;
-    }
-
-    markRunning(claimed.id);
-
-    try {
-      const llmResult = await routedLlm(prompt, {
-        strategy: st.strategy || opts.defaultStrategy || 'balanced',
-        capability: st.capability,
-        caller: opts.caller || `task-decomposer:${swarmId}:${i}`,
-      });
-      results[i] = llmResult.text;
-      completeTask(claimed.id, llmResult.text);
-      if (opts.onSubtaskComplete) opts.onSubtaskComplete(i, llmResult.text);
-    } catch (err) {
-      errors[i] = err.message;
-      allSuccess = false;
-      failTask(claimed.id, err.message);
-      if (opts.onSubtaskError) opts.onSubtaskError(i, err.message);
-    }
+      if (lastErr) {
+        errors[i] = lastErr.message;
+        allSuccess = false;
+        failTask(claimed.id, lastErr.message);
+        if (opts.onSubtaskError) opts.onSubtaskError(i, lastErr.message);
+      }
+    }));
   }
 
   // Synthesis step
@@ -232,7 +303,8 @@ async function executeDecomposed(taskDescription, opts = {}) {
         caller: opts.caller || `task-decomposer:${swarmId}:synthesis`,
       });
       synthesis = synthResult.text;
-    } catch {
+    } catch (err) {
+      console.error(`[task-decomposer] Synthesis failed for swarm ${swarmId}: ${err.message}`);
       synthesis = resultsText; // fallback: concatenate results
     }
   }

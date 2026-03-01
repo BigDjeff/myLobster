@@ -18,6 +18,8 @@ const AGENT_REGISTRY = {
     capabilities: ['coding', 'reasoning', 'long-context', 'creative', 'review'],
     costTier: 3,
     defaultTimeoutMs: 120_000,
+    maxContextTokens: 200_000,
+    pricingPerMToken: { input: 15, output: 75 },
   },
   'claude-sonnet-4-5': {
     provider: 'anthropic',
@@ -26,6 +28,8 @@ const AGENT_REGISTRY = {
     capabilities: ['coding', 'reasoning', 'long-context', 'review'],
     costTier: 2,
     defaultTimeoutMs: 60_000,
+    maxContextTokens: 200_000,
+    pricingPerMToken: { input: 3, output: 15 },
   },
   'claude-haiku-4-5': {
     provider: 'anthropic',
@@ -34,6 +38,8 @@ const AGENT_REGISTRY = {
     capabilities: ['classification', 'extraction', 'simple-reasoning', 'review'],
     costTier: 1,
     defaultTimeoutMs: 30_000,
+    maxContextTokens: 200_000,
+    pricingPerMToken: { input: 0.25, output: 1.25 },
   },
   'gpt-5.3-codex': {
     provider: 'openai',
@@ -42,6 +48,8 @@ const AGENT_REGISTRY = {
     capabilities: ['coding', 'reasoning'],
     costTier: 2,
     defaultTimeoutMs: 60_000,
+    maxContextTokens: 128_000,
+    pricingPerMToken: { input: 5, output: 15 },
   },
   'gpt-4o': {
     provider: 'openai',
@@ -50,6 +58,8 @@ const AGENT_REGISTRY = {
     capabilities: ['reasoning', 'multimodal'],
     costTier: 2,
     defaultTimeoutMs: 60_000,
+    maxContextTokens: 128_000,
+    pricingPerMToken: { input: 5, output: 15 },
   },
 };
 
@@ -131,13 +141,48 @@ function getBestModel(candidates) {
   return best;
 }
 
+/**
+ * Get models whose context window fits the given token count.
+ * @param {number} tokenCount - Required context size in tokens
+ * @param {string[]} [candidates] - Model names to consider (default: all)
+ * @returns {string[]}
+ */
+function getModelsByContextFit(tokenCount, candidates) {
+  const pool = candidates || getAllModels();
+  return pool.filter(m => {
+    const info = AGENT_REGISTRY[m];
+    return info && info.maxContextTokens >= tokenCount;
+  });
+}
+
+/**
+ * Get the fastest model (lowest defaultTimeoutMs) from a candidate list.
+ * @param {string[]} [candidates] - Model names to consider (default: all)
+ * @returns {string|null}
+ */
+function getFastestModel(candidates) {
+  const pool = candidates || getAllModels();
+  let best = null;
+  let bestTimeout = Infinity;
+  for (const m of pool) {
+    const info = AGENT_REGISTRY[m];
+    if (info && info.defaultTimeoutMs < bestTimeout) {
+      bestTimeout = info.defaultTimeoutMs;
+      best = m;
+    }
+  }
+  return best;
+}
+
 module.exports = {
   AGENT_REGISTRY,
   TIER_ORDER,
   getAgentInfo,
   getModelsByTier,
   getModelsWithCapability,
+  getModelsByContextFit,
   getAllModels,
   getCheapestModel,
+  getFastestModel,
   getBestModel,
 };

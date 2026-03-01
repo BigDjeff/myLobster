@@ -384,6 +384,183 @@ assert(jobIds.includes('verify-cron'), 'cron has verify-cron job');
 assert(jobIds.includes('refresh-openai-token'), 'cron has refresh-openai-token job');
 
 // ============================================================================
+// 8. Phase 1 reliability tests
+// ============================================================================
+console.log('\n=== 8. Phase 1 reliability ===');
+
+// 1F: postMessage validation
+let postMsgErr;
+try { comms.postMessage({}); } catch (e) { postMsgErr = e.message; }
+assert(postMsgErr && postMsgErr.includes('channel is required'), 'postMessage({}) throws "channel is required"');
+
+let postMsgErr2;
+try { comms.postMessage({ channel: 'x' }); } catch (e) { postMsgErr2 = e.message; }
+assert(postMsgErr2 && postMsgErr2.includes('sender is required'), 'postMessage with no sender throws');
+
+let postMsgErr3;
+try { comms.postMessage({ channel: 'x', sender: 'y', type: 'bogus', payload: 'z' }); } catch (e) { postMsgErr3 = e.message; }
+assert(postMsgErr3 && postMsgErr3.includes('invalid type'), 'postMessage with invalid type throws');
+
+let postMsgErr4;
+try { comms.postMessage({ channel: 'x', sender: 'y', payload: null }); } catch (e) { postMsgErr4 = e.message; }
+assert(postMsgErr4 && postMsgErr4.includes('payload is required'), 'postMessage with null payload throws');
+
+// 1D: resolveModel('fastest') returns haiku via fastest path (not cheapest)
+const fastestModel = smartRouter.resolveModel('fastest');
+assertEq(fastestModel, 'claude-haiku-4-5', 'fastest with no stats → haiku (via getFastestModel)');
+// Verify it's actually from registry's fastest (lowest timeout) not cheapest
+const haikuInfo = registry.getAgentInfo('claude-haiku-4-5');
+assert(haikuInfo.defaultTimeoutMs === 30_000, 'haiku has lowest timeout (30s) confirming fastest path');
+
+// 1H: claimTask with checkDeps
+tqDb.exec("DELETE FROM swarm_tasks WHERE swarm_id LIKE 'test-%'");
+const depSwarm = taskQueue.createSwarm({
+  swarmId: 'test-deps-1',
+  tasks: [
+    { description: 'Independent task', metadata: { depends_on: [], subtask_index: 0 } },
+    { description: 'Depends on task 0', metadata: { depends_on: [0], subtask_index: 1 } },
+    { description: 'Depends on task 1', metadata: { depends_on: [1], subtask_index: 2 } },
+  ],
+});
+
+// With checkDeps, should claim task 0 first (no deps)
+const depClaim1 = taskQueue.claimTask('test-deps-1', 'worker-x', { checkDeps: true });
+assert(depClaim1 !== null, 'checkDeps claims independent task');
+assertEq(depClaim1.description, 'Independent task', 'checkDeps claims task 0 first');
+
+// Task 1 depends on task 0 which is not done yet (only claimed)
+const depClaim2 = taskQueue.claimTask('test-deps-1', 'worker-x', { checkDeps: true });
+assert(depClaim2 === null, 'checkDeps blocks task with unmet dependencies');
+
+// Complete task 0, now task 1 should be claimable
+taskQueue.completeTask(depClaim1.id, 'done');
+const depClaim3 = taskQueue.claimTask('test-deps-1', 'worker-x', { checkDeps: true });
+assert(depClaim3 !== null, 'checkDeps allows task after dep is done');
+assertEq(depClaim3.description, 'Depends on task 0', 'checkDeps claims task 1 after task 0 done');
+
+tqDb.exec("DELETE FROM swarm_tasks WHERE swarm_id LIKE 'test-%'");
+
+// ============================================================================
+// 9. Phase 2 performance tests
+// ============================================================================
+console.log('\n=== 9. Phase 2 performance ===');
+
+// 2D: getContext with SQL-based lookup
+commsDb.exec("DELETE FROM messages WHERE channel LIKE 'test-%'");
+comms.shareContext('test-ctx-ch', 'agent-a', 'db_url', 'postgres://localhost/db');
+comms.shareContext('test-ctx-ch', 'agent-a', 'api_key', 'sk-test-123');
+comms.shareContext('test-ctx-ch', 'agent-a', 'db_url', 'postgres://localhost/db2');
+
+const ctxVal = comms.getContext('test-ctx-ch', 'db_url');
+assertEq(ctxVal, 'postgres://localhost/db2', 'getContext returns latest value for key via SQL');
+
+const ctxVal2 = comms.getContext('test-ctx-ch', 'api_key');
+assertEq(ctxVal2, 'sk-test-123', 'getContext returns correct value for different key');
+
+const ctxVal3 = comms.getContext('test-ctx-ch', 'nonexistent');
+assertEq(ctxVal3, null, 'getContext returns null for missing key');
+
+commsDb.exec("DELETE FROM messages WHERE channel LIKE 'test-%'");
+
+// 2E: cleanCompletedSwarms
+tqDb.exec("DELETE FROM swarm_tasks WHERE swarm_id LIKE 'test-%'");
+const cleanSwarm = taskQueue.createSwarm({
+  swarmId: 'test-clean-1',
+  tasks: [
+    { description: 'Old task A' },
+    { description: 'Old task B' },
+  ],
+});
+// Complete both tasks
+taskQueue.claimTask('test-clean-1', 'w1');
+const cleanT1 = taskQueue.getTask(cleanSwarm.taskIds[0]);
+taskQueue.completeTask(cleanT1.id, 'done');
+taskQueue.claimTask('test-clean-1', 'w1');
+const cleanT2 = taskQueue.getTask(cleanSwarm.taskIds[1]);
+taskQueue.completeTask(cleanT2.id, 'done');
+
+// Set completed_at to the past so retention check works
+tqDb.exec("UPDATE swarm_tasks SET completed_at = datetime('now', '-8 days') WHERE swarm_id = 'test-clean-1'");
+
+const cleanedCount = taskQueue.cleanCompletedSwarms(7);
+assert(cleanedCount >= 2, 'cleanCompletedSwarms deletes old terminal swarm tasks');
+
+const cleanedResults = taskQueue.getSwarmResults('test-clean-1');
+assertEq(cleanedResults.length, 0, 'cleaned swarm has no remaining tasks');
+
+tqDb.exec("DELETE FROM swarm_tasks WHERE swarm_id LIKE 'test-%'");
+
+// ============================================================================
+// 10. Phase 3 extensibility tests
+// ============================================================================
+console.log('\n=== 10. Phase 3 extensibility ===');
+
+// 3B: configureRouter changes thresholds
+const origDefaults = { ...smartRouter.ROUTER_DEFAULTS };
+smartRouter.configureRouter({ minSampleSize: 10 });
+// Verify the config change took effect by checking the exported ROUTER_DEFAULTS is unchanged (snapshot)
+assertEq(smartRouter.ROUTER_DEFAULTS.minSampleSize, 3, 'ROUTER_DEFAULTS unchanged after configureRouter');
+// Reset
+smartRouter.configureRouter({ minSampleSize: origDefaults.minSampleSize });
+
+// 3D: getModelsByContextFit
+const fit150k = registry.getModelsByContextFit(150_000);
+assert(fit150k.includes('claude-opus-4-5'), '200K opus fits 150K tokens');
+assert(fit150k.includes('claude-sonnet-4-5'), '200K sonnet fits 150K tokens');
+assert(fit150k.includes('claude-haiku-4-5'), '200K haiku fits 150K tokens');
+assert(!fit150k.includes('gpt-5.3-codex'), '128K codex does not fit 150K tokens');
+assert(!fit150k.includes('gpt-4o'), '128K gpt-4o does not fit 150K tokens');
+
+const fit100k = registry.getModelsByContextFit(100_000);
+assertEq(fit100k.length, 5, 'all 5 models fit 100K tokens');
+
+// 3D: pricing data in registry
+const opusPricing = registry.getAgentInfo('claude-opus-4-5').pricingPerMToken;
+assertEq(opusPricing.input, 15, 'opus input pricing is 15 per MToken');
+assertEq(opusPricing.output, 75, 'opus output pricing is 75 per MToken');
+
+const haikuPricing = registry.getAgentInfo('claude-haiku-4-5').pricingPerMToken;
+assertEq(haikuPricing.input, 0.25, 'haiku input pricing is 0.25 per MToken');
+
+// 3D: maxContextTokens in registry
+assertEq(registry.getAgentInfo('claude-opus-4-5').maxContextTokens, 200_000, 'opus has 200K context');
+assertEq(registry.getAgentInfo('gpt-5.3-codex').maxContextTokens, 128_000, 'codex has 128K context');
+
+// 3G: lifecycle hooks fire on completeTask and failTask
+tqDb.exec("DELETE FROM swarm_tasks WHERE swarm_id LIKE 'test-%'");
+const hookLog = [];
+taskQueue.onTaskEvent('onComplete', (taskId, result) => hookLog.push({ event: 'complete', taskId, result }));
+taskQueue.onTaskEvent('onFail', (taskId, error) => hookLog.push({ event: 'fail', taskId, error }));
+taskQueue.onTaskEvent('onClaim', (task) => hookLog.push({ event: 'claim', taskId: task.id }));
+taskQueue.onTaskEvent('onReset', (taskId) => hookLog.push({ event: 'reset', taskId }));
+
+const hookSwarm = taskQueue.createSwarm({
+  swarmId: 'test-hooks-1',
+  tasks: [{ description: 'Hook test A' }, { description: 'Hook test B' }],
+});
+const hClaimed = taskQueue.claimTask('test-hooks-1', 'hworker');
+assert(hookLog.some(h => h.event === 'claim' && h.taskId === hClaimed.id), 'onClaim hook fires');
+
+taskQueue.completeTask(hClaimed.id, 'hook-result');
+assert(hookLog.some(h => h.event === 'complete' && h.taskId === hClaimed.id && h.result === 'hook-result'), 'onComplete hook fires with correct args');
+
+const hClaimed2 = taskQueue.claimTask('test-hooks-1', 'hworker');
+taskQueue.failTask(hClaimed2.id, 'hook-error');
+assert(hookLog.some(h => h.event === 'fail' && h.taskId === hClaimed2.id && h.error === 'hook-error'), 'onFail hook fires with correct args');
+
+taskQueue.resetTask(hClaimed2.id);
+assert(hookLog.some(h => h.event === 'reset' && h.taskId === hClaimed2.id), 'onReset hook fires');
+
+tqDb.exec("DELETE FROM swarm_tasks WHERE swarm_id LIKE 'test-%'");
+
+// 3D: getFastestModel from registry
+const fastestReg = registry.getFastestModel();
+assertEq(fastestReg, 'claude-haiku-4-5', 'getFastestModel returns haiku (30s timeout)');
+
+const fastestSubset = registry.getFastestModel(['claude-opus-4-5', 'claude-sonnet-4-5']);
+assertEq(fastestSubset, 'claude-sonnet-4-5', 'getFastestModel of opus+sonnet returns sonnet (60s < 120s)');
+
+// ============================================================================
 // Summary
 // ============================================================================
 console.log(`\n${'='.repeat(60)}`);

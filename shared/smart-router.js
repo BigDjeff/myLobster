@@ -20,24 +20,50 @@ const {
   getAgentInfo,
   getModelsWithCapability,
   getCheapestModel,
+  getFastestModel,
   getBestModel,
   getAllModels,
 } = require('./agent-registry');
 
-// Fallbacks when no stats data is available
-const STRATEGY_FALLBACKS = {
-  cheapest: 'claude-haiku-4-5',
-  fastest: 'claude-haiku-4-5',
-  best: 'claude-opus-4-5',
-  balanced: 'claude-sonnet-4-5',
+// Configurable router defaults (3B, 3F)
+const ROUTER_DEFAULTS = {
+  minSuccessRate: 0.8,
+  balancedMinSuccessRate: 0.9,
+  minSampleSize: 3,
+  statsHoursBack: 24,
+  fallbacks: {
+    cheapest: 'claude-haiku-4-5',
+    fastest: 'claude-haiku-4-5',
+    best: 'claude-opus-4-5',
+    balanced: 'claude-sonnet-4-5',
+  },
 };
+
+let _routerConfig = { ...ROUTER_DEFAULTS, fallbacks: { ...ROUTER_DEFAULTS.fallbacks } };
+
+// Backward-compatible snapshot
+const STRATEGY_FALLBACKS = { ...ROUTER_DEFAULTS.fallbacks };
+
+/**
+ * Override router configuration values.
+ * @param {object} overrides - Partial config to merge
+ */
+function configureRouter(overrides) {
+  if (overrides.fallbacks) {
+    _routerConfig.fallbacks = { ..._routerConfig.fallbacks, ...overrides.fallbacks };
+    delete overrides.fallbacks;
+  }
+  Object.assign(_routerConfig, overrides);
+}
 
 /**
  * Query per-model stats from llm_calls.db for the last N hours.
  * @param {number} [hoursBack=24]
  * @returns {Array<{model: string, call_count: number, avg_latency_ms: number, success_rate: number, avg_cost: number}>}
  */
-function getModelStats(hoursBack = 24) {
+function getModelStats(hoursBack) {
+  const hours = hoursBack != null ? hoursBack : _routerConfig.statsHoursBack;
+  const minSamples = _routerConfig.minSampleSize;
   try {
     const db = getLlmDb();
     return db.prepare(`
@@ -49,8 +75,8 @@ function getModelStats(hoursBack = 24) {
       FROM llm_calls
       WHERE timestamp > datetime('now', ?)
       GROUP BY model
-      HAVING call_count >= 3
-    `).all(`-${hoursBack} hours`);
+      HAVING call_count >= ?
+    `).all(`-${hours} hours`, minSamples);
   } catch {
     return [];
   }
@@ -81,7 +107,7 @@ function resolveModel(strategy, opts = {}) {
     candidates = getAllModels();
   }
 
-  const stats = getModelStats(24);
+  const stats = getModelStats();
   const statsByModel = {};
   for (const s of stats) {
     statsByModel[s.model] = s;
@@ -90,7 +116,7 @@ function resolveModel(strategy, opts = {}) {
   // Filter candidates to those with decent success rates (for stats-based strategies)
   const reliableCandidates = candidates.filter(m => {
     const s = statsByModel[m];
-    return s && s.success_rate >= 0.8;
+    return s && s.success_rate >= _routerConfig.minSuccessRate;
   });
 
   switch (strategy) {
@@ -108,7 +134,7 @@ function resolveModel(strategy, opts = {}) {
         return best;
       }
       // Fallback: use registry costTier
-      return getCheapestModel(candidates) || STRATEGY_FALLBACKS.cheapest;
+      return getCheapestModel(candidates) || _routerConfig.fallbacks.cheapest;
     }
 
     case 'fastest': {
@@ -124,19 +150,19 @@ function resolveModel(strategy, opts = {}) {
         }
         return best;
       }
-      return getCheapestModel(candidates) || STRATEGY_FALLBACKS.fastest;
+      return getFastestModel(candidates) || _routerConfig.fallbacks.fastest;
     }
 
     case 'best': {
       // Static: highest tier from registry
-      return getBestModel(candidates) || STRATEGY_FALLBACKS.best;
+      return getBestModel(candidates) || _routerConfig.fallbacks.best;
     }
 
     case 'balanced': {
       // Stats-based: best (1/cost * 1/latency) ratio with success_rate >= 0.9
       const highReliable = candidates.filter(m => {
         const s = statsByModel[m];
-        return s && s.success_rate >= 0.9;
+        return s && s.success_rate >= _routerConfig.balancedMinSuccessRate;
       });
 
       if (highReliable.length > 0) {
@@ -157,11 +183,11 @@ function resolveModel(strategy, opts = {}) {
       // Fallback: sonnet is the canonical balanced choice
       return candidates.includes('claude-sonnet-4-5')
         ? 'claude-sonnet-4-5'
-        : STRATEGY_FALLBACKS.balanced;
+        : _routerConfig.fallbacks.balanced;
     }
 
     default:
-      return model || STRATEGY_FALLBACKS.balanced;
+      return model || _routerConfig.fallbacks.balanced;
   }
 }
 
@@ -188,6 +214,10 @@ async function routedLlm(prompt, {
 } = {}) {
   const resolvedModel = model || resolveModel(strategy, { capability, model });
 
+  if (!skipLog) {
+    console.error(`[smart-router] strategy=${strategy} capability=${capability || 'any'} → model=${resolvedModel}`);
+  }
+
   // Use the resolved model's default timeout if not specified
   const info = getAgentInfo(resolvedModel);
   const timeout = timeoutMs || (info ? info.defaultTimeoutMs : 60_000);
@@ -202,4 +232,4 @@ async function routedLlm(prompt, {
   return { ...result, resolvedModel };
 }
 
-module.exports = { routedLlm, resolveModel, getModelStats, STRATEGY_FALLBACKS };
+module.exports = { routedLlm, resolveModel, getModelStats, configureRouter, ROUTER_DEFAULTS, STRATEGY_FALLBACKS };

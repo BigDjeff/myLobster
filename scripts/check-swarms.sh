@@ -22,12 +22,14 @@ if [ ! -f "$SWARM_DB" ]; then
   exit 0
 fi
 
-# 1. Reset stale tasks (claimed/running for > 15 minutes)
+STALE_MINUTES="${STALE_MINUTES:-15}"
+
+# 1. Reset stale tasks (claimed/running for > STALE_MINUTES)
 STALE_COUNT=$(sqlite3 "$SWARM_DB" "
   UPDATE swarm_tasks
   SET status = 'pending', agent_id = NULL, claimed_at = NULL
   WHERE status IN ('claimed', 'running')
-  AND claimed_at < datetime('now', '-15 minutes');
+  AND claimed_at < datetime('now', '-${STALE_MINUTES} minutes');
   SELECT changes();
 " 2>/dev/null || echo "0")
 

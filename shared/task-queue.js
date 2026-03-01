@@ -19,6 +19,27 @@ const DB_PATH = path.join(__dirname, '..', 'data', 'swarm_tasks.db');
 
 let _db = null;
 
+// Lifecycle hooks registry (3G)
+const _hooks = { onClaim: [], onComplete: [], onFail: [], onReset: [] };
+
+function _fireHook(event, ...args) {
+  for (const fn of _hooks[event] || []) {
+    try { fn(...args); } catch (err) {
+      console.error(`[task-queue] Hook ${event} error: ${err.message}`);
+    }
+  }
+}
+
+/**
+ * Register a callback for a task lifecycle event.
+ * @param {'onClaim'|'onComplete'|'onFail'|'onReset'} event
+ * @param {function} fn
+ */
+function onTaskEvent(event, fn) {
+  if (!_hooks[event]) throw new Error(`Unknown task event: ${event}`);
+  _hooks[event].push(fn);
+}
+
 function getDb() {
   if (_db) return _db;
   _db = new Database(DB_PATH);
@@ -44,6 +65,7 @@ function getDb() {
     );
     CREATE INDEX IF NOT EXISTS idx_swarm_tasks_swarm ON swarm_tasks(swarm_id);
     CREATE INDEX IF NOT EXISTS idx_swarm_tasks_status ON swarm_tasks(status);
+    CREATE INDEX IF NOT EXISTS idx_swarm_tasks_claimed ON swarm_tasks(status, claimed_at);
   `);
   return _db;
 }
@@ -95,10 +117,56 @@ function createSwarm({ swarmId, tasks }) {
  * Returns null if no tasks available (or another worker got it).
  * @param {string} swarmId
  * @param {string} agentId
+ * @param {object} [opts]
+ * @param {boolean} [opts.checkDeps=false] - When true, only claim tasks whose depends_on are all done
  * @returns {object|null}
  */
-function claimTask(swarmId, agentId) {
+function claimTask(swarmId, agentId, opts = {}) {
   const db = getDb();
+
+  if (opts.checkDeps) {
+    // Get all pending tasks ordered by seq, check deps
+    const pendingTasks = db.prepare(
+      `SELECT id, metadata FROM swarm_tasks WHERE swarm_id = ? AND status = 'pending' ORDER BY seq`
+    ).all(swarmId);
+
+    for (const candidate of pendingTasks) {
+      let depsOk = true;
+      if (candidate.metadata) {
+        try {
+          const meta = JSON.parse(candidate.metadata);
+          if (Array.isArray(meta.depends_on) && meta.depends_on.length > 0) {
+            // Check all dep tasks are done
+            const allTasks = db.prepare(
+              `SELECT seq, status FROM swarm_tasks WHERE swarm_id = ? ORDER BY seq`
+            ).all(swarmId);
+            for (const depIdx of meta.depends_on) {
+              const depTask = allTasks[depIdx];
+              if (!depTask || depTask.status !== 'done') {
+                depsOk = false;
+                break;
+              }
+            }
+          }
+        } catch {
+          // Malformed metadata, skip dep check
+        }
+      }
+      if (!depsOk) continue;
+
+      const changes = db.prepare(
+        `UPDATE swarm_tasks SET status='claimed', agent_id=?, claimed_at=? WHERE id=? AND status='pending'`
+      ).run(agentId, new Date().toISOString(), candidate.id);
+
+      if (changes.changes > 0) {
+        const claimed = db.prepare('SELECT * FROM swarm_tasks WHERE id = ?').get(candidate.id);
+        _fireHook('onClaim', claimed);
+        return claimed;
+      }
+    }
+    return null;
+  }
+
   const task = db.prepare(
     `SELECT id FROM swarm_tasks WHERE swarm_id = ? AND status = 'pending' ORDER BY seq LIMIT 1`
   ).get(swarmId);
@@ -109,7 +177,9 @@ function claimTask(swarmId, agentId) {
   ).run(agentId, new Date().toISOString(), task.id);
 
   if (changes.changes === 0) return null; // another worker got it
-  return db.prepare('SELECT * FROM swarm_tasks WHERE id = ?').get(task.id);
+  const claimed = db.prepare('SELECT * FROM swarm_tasks WHERE id = ?').get(task.id);
+  _fireHook('onClaim', claimed);
+  return claimed;
 }
 
 /**
@@ -131,6 +201,7 @@ function completeTask(taskId, result) {
   db.prepare(
     `UPDATE swarm_tasks SET status='done', result=?, completed_at=? WHERE id=?`
   ).run(result, new Date().toISOString(), taskId);
+  _fireHook('onComplete', taskId, result);
 }
 
 /**
@@ -143,6 +214,7 @@ function failTask(taskId, error) {
   db.prepare(
     `UPDATE swarm_tasks SET status='failed', error=?, completed_at=? WHERE id=?`
   ).run(error, new Date().toISOString(), taskId);
+  _fireHook('onFail', taskId, error);
 }
 
 /**
@@ -154,6 +226,7 @@ function resetTask(taskId) {
   db.prepare(
     `UPDATE swarm_tasks SET status='pending', agent_id=NULL, claimed_at=NULL WHERE id=?`
   ).run(taskId);
+  _fireHook('onReset', taskId);
 }
 
 /**
@@ -235,6 +308,24 @@ function getActiveSwarms() {
 }
 
 /**
+ * Delete fully terminal swarms older than the given retention period.
+ * @param {number} [retentionDays=7]
+ * @returns {number} Number of deleted tasks
+ */
+function cleanCompletedSwarms(retentionDays = 7) {
+  const db = getDb();
+  const result = db.prepare(`
+    DELETE FROM swarm_tasks WHERE swarm_id IN (
+      SELECT swarm_id FROM swarm_tasks
+      GROUP BY swarm_id
+      HAVING COUNT(*) = SUM(CASE WHEN status IN ('done', 'failed') THEN 1 ELSE 0 END)
+        AND MAX(completed_at) < datetime('now', ?)
+    )
+  `).run(`-${retentionDays} days`);
+  return result.changes;
+}
+
+/**
  * Close the database connection (for clean test teardown).
  */
 function closeDb() {
@@ -258,6 +349,8 @@ module.exports = {
   getTask,
   getStaleTasks,
   getActiveSwarms,
+  cleanCompletedSwarms,
+  onTaskEvent,
   closeDb,
   DB_PATH,
 };

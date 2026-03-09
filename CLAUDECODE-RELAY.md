@@ -5,8 +5,9 @@ Purpose: OpenClaw acts as a thin orchestrator between Jeff and Claude Code termi
 ## Trigger
 - Enter this mode only when user message starts with `CLAUDECODE `.
 - Presets:
-  - `CLAUDECODE START`: start a fresh Claude Code session.
-  - `CLAUDECODE STOP`: stop the current Claude Code session.
+  - `CLAUDECODE START`: start a fresh Claude Code tmux session.
+  - `CLAUDECODE STOP`: stop the current Claude Code tmux session.
+- Default relay for `CLAUDECODE <prompt>` is one-shot mode via `scripts/claudecode-run.sh`.
 
 ## Defaults
 - Default working directory: `/Users/jeffcheng/.openclaw`.
@@ -27,7 +28,8 @@ Purpose: OpenClaw acts as a thin orchestrator between Jeff and Claude Code termi
 - Do not inject additional context into Claude prompts.
 
 ## Helper scripts
-- `scripts/claudecode-start.sh`
-- `scripts/claudecode-send.sh`
-- `scripts/claudecode-capture.sh`
-- `scripts/claudecode-stop.sh`
+- `scripts/claudecode-run.sh` (default for `CLAUDECODE <prompt>`, reliable one-shot)
+- `scripts/claudecode-start.sh` (`CLAUDECODE START`)
+- `scripts/claudecode-stop.sh` (`CLAUDECODE STOP`)
+- `scripts/claudecode-send.sh` (optional manual tmux input)
+- `scripts/claudecode-capture.sh` (optional manual tmux capture)

@@ -74,20 +74,10 @@ This loop is the single most important factor in producing reliable code. An age
 - Keep wording direct, concise, and practical.
 - Implement exactly what is asked. Do not expand scope.
 
-## ClaudeCode Relay Mode (Strict)
+## ClaudeCode Relay Mode (Lean Trigger)
 - Trigger phrase: messages starting with `CLAUDECODE ` enter ClaudeCode Relay Mode.
-- Presets:
-  - `CLAUDECODE START`: start a fresh Claude Code session in `/Users/jeffcheng/.openclaw` (unless user explicitly gives another path).
-  - `CLAUDECODE STOP`: stop the active Claude Code session.
-- Default path for Claude Code work is `/Users/jeffcheng/.openclaw` unless explicitly overridden.
-- Prompt handoff rule: pass the prompt to Claude Code exactly as provided after `CLAUDECODE `, with no rewriting, no summarization, and no added instructions.
-- Response return rule: return Claude Code output as exact terminal text, word-for-word, with no paraphrase.
-- Orchestrator-only rule in Relay Mode: act only as terminal relay (start/send/read/stop). Do not run extra planning, web, or memory steps unless explicitly asked.
-- Token minimization in Relay Mode:
-  - No narration before/after tool calls.
-  - No summaries unless explicitly requested.
-  - Single-line status replies for START/STOP/ERROR.
-  - Avoid extra context injection into Claude prompts.
+- On trigger, load and follow: `/Users/jeffcheng/.openclaw/workspace/CLAUDECODE-RELAY.md`.
+- Do not apply Relay Mode rules to non-`CLAUDECODE` messages.
 
 ## Message Pattern
 - Default: return results directly.

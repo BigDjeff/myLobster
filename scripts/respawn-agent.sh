@@ -30,8 +30,8 @@ if [ -z "$TASK_JSON" ]; then
   exit 1
 fi
 
-AGENT=$(echo "$TASK_JSON" | jq -r '.agent // "claude-sonnet"')
-MODEL=$(echo "$TASK_JSON" | jq -r '.model // "claude-sonnet-4-5"')
+AGENT=$(echo "$TASK_JSON" | jq -r '.agent // "codex"')
+MODEL=$(echo "$TASK_JSON" | jq -r '.model // "gpt-5.3-codex"')
 ORIGINAL_PROMPT=$(echo "$TASK_JSON" | jq -r '.originalPrompt // .description')
 TMUX_SESSION=$(echo "$TASK_JSON" | jq -r '.tmuxSession // empty')
 BRANCH=$(echo "$TASK_JSON" | jq -r '.worktree // empty')
@@ -75,7 +75,7 @@ Return ONLY the improved prompt text, nothing else.\`;
   (async () => {
     try {
       const result = await runLlm(metaPrompt, {
-        model: 'claude-haiku-4-5',
+        model: 'gpt-5.3-codex',
         caller: 'respawn-agent',
         timeoutMs: 30000,
       });

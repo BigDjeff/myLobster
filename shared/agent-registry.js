@@ -45,7 +45,7 @@ const AGENT_REGISTRY = {
     provider: 'openai',
     agentType: 'codex',
     tier: 'balanced',
-    capabilities: ['coding', 'reasoning'],
+    capabilities: ['coding', 'reasoning', 'review', 'classification', 'extraction', 'simple-reasoning'],
     costTier: 2,
     defaultTimeoutMs: 60_000,
     maxContextTokens: 128_000,
@@ -101,6 +101,15 @@ function getModelsWithCapability(capability) {
  */
 function getAllModels() {
   return Object.keys(AGENT_REGISTRY);
+}
+
+/**
+ * Get all models for a provider.
+ * @param {string} provider
+ * @returns {string[]}
+ */
+function getModelsByProvider(provider) {
+  return Object.keys(AGENT_REGISTRY).filter(m => AGENT_REGISTRY[m].provider === provider);
 }
 
 /**
@@ -182,6 +191,7 @@ module.exports = {
   getModelsWithCapability,
   getModelsByContextFit,
   getAllModels,
+  getModelsByProvider,
   getCheapestModel,
   getFastestModel,
   getBestModel,

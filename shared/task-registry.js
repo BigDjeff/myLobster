@@ -23,7 +23,7 @@ function writeRegistry(data) {
  * @param {string} opts.id - Unique task ID (auto-generated if omitted)
  * @param {string} opts.description - What the task is about
  * @param {string} [opts.agent='claude-sonnet'] - Agent type
- * @param {string} [opts.model='claude-sonnet-4-5'] - Model ID
+ * @param {string} [opts.model='gpt-5.3-codex'] - Model ID
  * @param {string} [opts.tmuxSession] - tmux session name
  * @param {string} [opts.worktree] - Git branch/worktree name
  * @param {string} [opts.originalPrompt] - The prompt given to the agent
@@ -37,7 +37,7 @@ function addTask(opts) {
     id: opts.id || crypto.randomBytes(4).toString('hex'),
     description: opts.description || '',
     agent: opts.agent || 'claude-sonnet',
-    model: opts.model || 'claude-sonnet-4-5',
+    model: opts.model || 'gpt-5.3-codex',
     tmuxSession: opts.tmuxSession || null,
     worktree: opts.worktree || null,
     originalPrompt: opts.originalPrompt || null,

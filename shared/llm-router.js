@@ -24,14 +24,14 @@ const { runOpenAIChatPrompt } = require('./openai-chat');
  *
  * @param {string} prompt
  * @param {object} opts
- * @param {string} [opts.model='claude-sonnet-4-5']
+ * @param {string} [opts.model='gpt-5.3-codex']
  * @param {number} [opts.timeoutMs=60000]
  * @param {string} [opts.caller='unknown']
  * @param {boolean} [opts.skipLog=false]
  * @returns {Promise<{ text: string, durationMs: number, provider: string }>}
  */
 async function runLlm(prompt, {
-  model = 'claude-sonnet-4-5',
+  model = 'gpt-5.3-codex',
   timeoutMs = 60_000,
   caller = 'unknown',
   skipLog = false,
@@ -54,10 +54,11 @@ async function runLlm(prompt, {
 }
 
 /**
- * Convenience wrapper defaulting to claude-sonnet-4-5.
+ * Convenience wrapper kept for backward compatibility.
+ * Defaults to gpt-5.3-codex to avoid accidental Anthropic usage.
  */
 async function runClaude(prompt, opts = {}) {
-  return runLlm(prompt, { model: 'claude-sonnet-4-5', ...opts });
+  return runLlm(prompt, { model: 'gpt-5.3-codex', ...opts });
 }
 
 /**

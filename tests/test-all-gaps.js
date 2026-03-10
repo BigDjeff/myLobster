@@ -186,16 +186,16 @@ const smartRouter = require('../shared/smart-router');
 
 // Test resolveModel with no stats data (should use fallbacks)
 const cheapest = smartRouter.resolveModel('cheapest');
-assertEq(cheapest, 'claude-haiku-4-5', 'cheapest with no stats → haiku (fallback from registry)');
+assertEq(cheapest, 'gpt-5.3-codex', 'cheapest with no stats → codex (openai-only fallback)');
 
 const fastest = smartRouter.resolveModel('fastest');
-assertEq(fastest, 'claude-haiku-4-5', 'fastest with no stats → haiku (fallback from registry)');
+assertEq(fastest, 'gpt-5.3-codex', 'fastest with no stats → codex (openai-only fallback)');
 
 const best = smartRouter.resolveModel('best');
-assertEq(best, 'claude-opus-4-5', 'best → opus (from registry)');
+assertEq(best, 'gpt-5.3-codex', 'best → codex (openai-only fallback)');
 
 const balanced = smartRouter.resolveModel('balanced');
-assertEq(balanced, 'claude-sonnet-4-5', 'balanced with no stats → sonnet (fallback)');
+assertEq(balanced, 'gpt-5.3-codex', 'balanced with no stats → codex (openai-only fallback)');
 
 // specific strategy
 const specific = smartRouter.resolveModel('specific', { model: 'gpt-4o' });
@@ -203,15 +203,15 @@ assertEq(specific, 'gpt-4o', 'specific → pass-through');
 
 // With capability filter
 const codingBest = smartRouter.resolveModel('best', { capability: 'coding' });
-assertEq(codingBest, 'claude-opus-4-5', 'best coding model is opus');
+assertEq(codingBest, 'gpt-5.3-codex', 'best coding model is codex (openai-only)');
 
 // getModelStats
 const stats = smartRouter.getModelStats(24);
 assert(Array.isArray(stats), 'getModelStats returns array');
 
 // STRATEGY_FALLBACKS
-assert(smartRouter.STRATEGY_FALLBACKS.cheapest === 'claude-haiku-4-5', 'fallback cheapest is haiku');
-assert(smartRouter.STRATEGY_FALLBACKS.best === 'claude-opus-4-5', 'fallback best is opus');
+assert(smartRouter.STRATEGY_FALLBACKS.cheapest === 'gpt-5.3-codex', 'fallback cheapest is codex');
+assert(smartRouter.STRATEGY_FALLBACKS.best === 'gpt-5.3-codex', 'fallback best is codex');
 
 // ============================================================================
 // 4. task-decomposer.js (structure tests only)
@@ -405,12 +405,11 @@ let postMsgErr4;
 try { comms.postMessage({ channel: 'x', sender: 'y', payload: null }); } catch (e) { postMsgErr4 = e.message; }
 assert(postMsgErr4 && postMsgErr4.includes('payload is required'), 'postMessage with null payload throws');
 
-// 1D: resolveModel('fastest') returns haiku via fastest path (not cheapest)
+// 1D: resolveModel('fastest') stays OpenAI-only and returns codex
 const fastestModel = smartRouter.resolveModel('fastest');
-assertEq(fastestModel, 'claude-haiku-4-5', 'fastest with no stats → haiku (via getFastestModel)');
-// Verify it's actually from registry's fastest (lowest timeout) not cheapest
-const haikuInfo = registry.getAgentInfo('claude-haiku-4-5');
-assert(haikuInfo.defaultTimeoutMs === 30_000, 'haiku has lowest timeout (30s) confirming fastest path');
+assertEq(fastestModel, 'gpt-5.3-codex', 'fastest with no stats → codex (openai-only routing)');
+const codexInfo = registry.getAgentInfo('gpt-5.3-codex');
+assert(codexInfo.defaultTimeoutMs === 60_000, 'codex timeout is 60s and selected as OpenAI default');
 
 // 1H: claimTask with checkDeps
 tqDb.exec("DELETE FROM swarm_tasks WHERE swarm_id LIKE 'test-%'");

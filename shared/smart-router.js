@@ -23,6 +23,7 @@ const {
   getFastestModel,
   getBestModel,
   getAllModels,
+  getModelsByProvider,
 } = require('./agent-registry');
 
 // Configurable router defaults (3B, 3F)
@@ -32,10 +33,10 @@ const ROUTER_DEFAULTS = {
   minSampleSize: 3,
   statsHoursBack: 24,
   fallbacks: {
-    cheapest: 'claude-haiku-4-5',
-    fastest: 'claude-haiku-4-5',
-    best: 'claude-opus-4-5',
-    balanced: 'claude-sonnet-4-5',
+    cheapest: 'gpt-5.3-codex',
+    fastest: 'gpt-5.3-codex',
+    best: 'gpt-5.3-codex',
+    balanced: 'gpt-5.3-codex',
   },
 };
 
@@ -95,16 +96,17 @@ function resolveModel(strategy, opts = {}) {
 
   // specific: pass-through
   if (strategy === 'specific' || (!strategy && model)) {
-    return model || 'claude-sonnet-4-5';
+    return model || 'gpt-5.3-codex';
   }
 
-  // Build candidate pool
+  // Build candidate pool (OpenAI-only by default to avoid Anthropic usage)
+  const openAiModels = getModelsByProvider('openai');
   let candidates = capability
-    ? getModelsWithCapability(capability)
-    : getAllModels();
+    ? getModelsWithCapability(capability).filter(m => openAiModels.includes(m))
+    : openAiModels;
 
   if (candidates.length === 0) {
-    candidates = getAllModels();
+    candidates = openAiModels;
   }
 
   const stats = getModelStats();
@@ -180,9 +182,9 @@ function resolveModel(strategy, opts = {}) {
         }
         return best;
       }
-      // Fallback: sonnet is the canonical balanced choice
-      return candidates.includes('claude-sonnet-4-5')
-        ? 'claude-sonnet-4-5'
+      // Fallback: codex is the canonical balanced choice for this workspace
+      return candidates.includes('gpt-5.3-codex')
+        ? 'gpt-5.3-codex'
         : _routerConfig.fallbacks.balanced;
     }
 

@@ -1,21 +1,18 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Starts a persistent Claude Code tmux session in ~/.openclaw.
-# Usage: scripts/claudecode-start.sh [session_name]
+# Marks ClaudeCode relay session as active (single-session mode).
+# Usage: scripts/claudecode-start.sh
 
-SESSION_NAME="${1:-claudecode-relay}"
 WORKDIR="${HOME}/.openclaw"
+STATE_DIR="${WORKDIR}/workspace/data"
+STATE_FILE="${STATE_DIR}/claudecode-session.state"
 
-if ! command -v tmux >/dev/null 2>&1; then
-  echo "ERROR: tmux not found"
-  exit 1
-fi
-
-if tmux has-session -t "$SESSION_NAME" 2>/dev/null; then
-  echo "ALREADY_RUNNING:$SESSION_NAME"
+mkdir -p "$STATE_DIR"
+if [ -f "$STATE_FILE" ]; then
+  echo "ALREADY_RUNNING:claudecode-relay:${WORKDIR}"
   exit 0
 fi
 
-tmux new-session -d -s "$SESSION_NAME" -c "$WORKDIR" "claude"
-echo "STARTED:$SESSION_NAME:$WORKDIR"
+printf 'active=1\nstarted_at=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$STATE_FILE"
+echo "STARTED:claudecode-relay:${WORKDIR}"

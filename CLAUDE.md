@@ -151,6 +151,23 @@ The active LLM backend (`shared/openai-chat.js`) uses Node's built-in `fetch` �
 
 Do not add new dependencies without explicit user approval.
 
+## Accountability Module (Contained)
+
+A self-contained personal accountability system at `accountability/`. Tracks boxing, gym, sleep habits with Telegram bot check-ins. **Fully isolated** — does not use any `shared/` modules or `data/` databases.
+
+- **Code**: `accountability/` (config, habit-db, telegram, scheduler, pattern-detector, reports, bot, cli)
+- **Database**: `accountability/data/habits.db` (NOT in `workspace/data/`)
+- **Script**: `scripts/accountability-bot.sh` (start/stop/status)
+- **Tests**: `node accountability/test-accountability.js` (standalone, not in test-all-gaps.js)
+- **Docs**: `accountability/README.md` (full usage, schedule, architecture)
+
+### Rules for this module
+- Never import from `shared/` — this module is self-contained
+- Database lives at `accountability/data/habits.db` — never touch `data/*.db`
+- Uses existing Telegram bot token from `~/.openclaw/openclaw.json`
+- Can be started/stopped independently: `scripts/accountability-bot.sh start|stop|status`
+- CLI for manual testing: `node accountability/cli.js <command>`
+
 ## Reference Documents
 
 For detailed rules on specific topics, read these files (do not duplicate their content):
@@ -159,3 +176,4 @@ For detailed rules on specific topics, read these files (do not duplicate their 
 - **AI personality/voice**: SOUL.md
 - **Platform config & API paths**: TOOLS.md
 - **Health monitoring procedures**: HEARTBEAT.md
+- **Accountability system**: accountability/README.md
